@@ -473,8 +473,9 @@ detach_root_data_mounts() {
 
 replace_os() {
     new_root="$1"
+    source_script="$(current_script_path)"
     cd /
-    cp "$(current_script_path)" "$new_root/OsMutation.sh"
+    cp "$source_script" "$new_root/OsMutation.sh"
     if ! detach_root_data_mounts; then
         die "root data mounts are still busy; no old system files were removed"
     fi
