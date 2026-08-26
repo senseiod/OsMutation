@@ -17,7 +17,7 @@ Reinstall an OpenVZ 7+ or LXC container to Debian, Ubuntu, CentOS, Alpine Linux,
 Standard mode:
 
 ```bash
-wget -qO OsMutation.sh https://raw.githubusercontent.com/LloydAsp/OsMutation/main/OsMutation.sh
+wget -qO OsMutation.sh https://raw.githubusercontent.com/senseiod/OsMutation/main/OsMutation.sh
 chmod u+x OsMutation.sh
 ./OsMutation.sh
 ```
@@ -25,7 +25,7 @@ chmod u+x OsMutation.sh
 Or with curl:
 
 ```bash
-curl -fsSLo OsMutation.sh https://raw.githubusercontent.com/LloydAsp/OsMutation/main/OsMutation.sh
+curl -fsSLo OsMutation.sh https://raw.githubusercontent.com/senseiod/OsMutation/main/OsMutation.sh
 chmod u+x OsMutation.sh
 ./OsMutation.sh
 ```
@@ -33,7 +33,7 @@ chmod u+x OsMutation.sh
 Tight mode for a small disk (experimental):
 
 ```bash
-wget -qO OsMutationTight.sh https://raw.githubusercontent.com/LloydAsp/OsMutation/main/OsMutationTight.sh
+wget -qO OsMutationTight.sh https://raw.githubusercontent.com/senseiod/OsMutation/main/OsMutationTight.sh
 chmod u+x OsMutationTight.sh
 ./OsMutationTight.sh
 ```
