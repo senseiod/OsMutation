@@ -241,7 +241,16 @@ collect_network_configuration() {
             }
         }
     }')"
-    saved_hostname="$(hostname)"
+    saved_hostname=""
+    if command -v hostname >/dev/null 2>&1; then
+        saved_hostname="$(hostname 2>/dev/null || true)"
+    fi
+    if [ -z "$saved_hostname" ] && [ -f /etc/hostname ]; then
+        saved_hostname="$(sed -n '1p' /etc/hostname 2>/dev/null || true)"
+    fi
+    if [ -z "$saved_hostname" ]; then
+        saved_hostname="$(uname -n 2>/dev/null || true)"
+    fi
     [ -n "$saved_hostname" ] || saved_hostname="localhost"
 }
 
