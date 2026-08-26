@@ -132,10 +132,42 @@ copy_main_script() {
     chmod 700 "$TRANSIT_ROOT/OsMutation.sh"
 }
 
+list_oldroot_data_mounts() {
+    oldroot="$1"
+    while IFS= read -r mount_path; do
+        [ -n "$mount_path" ] || continue
+        relative_path="${mount_path#"$oldroot"/}"
+        case "$relative_path" in
+            dev|dev/*|proc|proc/*|run|run/*|sys|sys/*|x|x/*|oldroot|oldroot/*)
+                continue
+                ;;
+        esac
+        printf '%s\n' "$mount_path"
+    done < <(awk -v prefix="$oldroot/" 'index($5, prefix) == 1 { print $5 }' /proc/self/mountinfo | sort -r)
+}
+
+detach_oldroot_mounts() {
+    oldroot="$1"
+    mount --make-rslave "$oldroot" 2>/dev/null || true
+
+    while IFS= read -r mount_path; do
+        [ -n "$mount_path" ] || continue
+        umount -R "$mount_path" 2>/dev/null || umount -l "$mount_path" 2>/dev/null || true
+    done < <(list_oldroot_data_mounts "$oldroot")
+
+    remaining_mounts="$(list_oldroot_data_mounts "$oldroot")"
+    if [ -n "$remaining_mounts" ]; then
+        echo "Unable to detach old-root mounts:" >&2
+        printf '%s\n' "$remaining_mounts" >&2
+        return 1
+    fi
+}
+
 mount_transit() {
     mkdir -p "$TRANSIT_ROOT/oldroot" "$TRANSIT_ROOT/dev" "$TRANSIT_ROOT/proc" "$TRANSIT_ROOT/sys" "$TRANSIT_ROOT/run"
     mount --bind / "$TRANSIT_ROOT/oldroot"
     transit_mounted="yes"
+    detach_oldroot_mounts "$TRANSIT_ROOT/oldroot" || die "old-root submounts are still busy; no old system files were removed"
     mount --rbind /dev "$TRANSIT_ROOT/dev"
     mount --make-rslave "$TRANSIT_ROOT/dev"
     mount -t proc proc "$TRANSIT_ROOT/proc"

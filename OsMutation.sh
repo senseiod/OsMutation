@@ -431,11 +431,46 @@ current_script_path() {
     printf '%s/%s\n' "$script_dir" "$(basename -- "${BASH_SOURCE[0]}")"
 }
 
+list_oldroot_data_mounts() {
+    oldroot="$1"
+    while IFS= read -r mount_path; do
+        [ -n "$mount_path" ] || continue
+        relative_path="${mount_path#"$oldroot"/}"
+        case "$relative_path" in
+            dev|dev/*|proc|proc/*|run|run/*|sys|sys/*|x|x/*|oldroot|oldroot/*)
+                continue
+                ;;
+        esac
+        printf '%s\n' "$mount_path"
+    done < <(awk -v prefix="$oldroot/" 'index($5, prefix) == 1 { print $5 }' /proc/self/mountinfo | sort -r)
+}
+
+detach_oldroot_mounts() {
+    oldroot="$1"
+    mount --make-rslave "$oldroot" 2>/dev/null || true
+
+    while IFS= read -r mount_path; do
+        [ -n "$mount_path" ] || continue
+        umount -R "$mount_path" 2>/dev/null || umount -l "$mount_path" 2>/dev/null || true
+    done < <(list_oldroot_data_mounts "$oldroot")
+
+    remaining_mounts="$(list_oldroot_data_mounts "$oldroot")"
+    if [ -n "$remaining_mounts" ]; then
+        echo "Unable to detach old-root mounts:" >&2
+        printf '%s\n' "$remaining_mounts" >&2
+        return 1
+    fi
+}
+
 replace_os() {
     new_root="$1"
     cp "$(current_script_path)" "$new_root/OsMutation.sh"
     mkdir -p "$new_root/oldroot"
     mount --bind / "$new_root/oldroot"
+    if ! detach_oldroot_mounts "$new_root/oldroot"; then
+        umount -R "$new_root/oldroot" 2>/dev/null || umount -l "$new_root/oldroot" 2>/dev/null || true
+        die "old-root submounts are still busy; no old system files were removed"
+    fi
 
     chroot "$new_root" /bin/bash -c '
         set -o errexit
