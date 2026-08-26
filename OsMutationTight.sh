@@ -15,6 +15,17 @@ die() {
     exit 1
 }
 
+retry_command() {
+    local attempt=1
+    local max_attempts=3
+    until "$@"; do
+        [ "$attempt" -lt "$max_attempts" ] || return 1
+        attempt=$((attempt + 1))
+        echo "Command failed; retrying ($attempt/$max_attempts)..." >&2
+        sleep 2
+    done
+}
+
 detect_package_manager() {
     if command -v apt-get >/dev/null 2>&1; then
         pkg_manager="apt"
@@ -51,8 +62,8 @@ install() {
             apk add --no-cache "$@"
             ;;
         pacman)
-            pacman -Sy --noconfirm
-            pacman -S --noconfirm --needed "$@"
+            retry_command pacman -Sy --noconfirm --disable-download-timeout
+            retry_command pacman -S --noconfirm --needed --disable-download-timeout "$@"
             ;;
     esac
 }
@@ -132,32 +143,29 @@ copy_main_script() {
     chmod 700 "$TRANSIT_ROOT/OsMutation.sh"
 }
 
-list_oldroot_data_mounts() {
-    oldroot="$1"
+list_root_data_mounts() {
     while IFS= read -r mount_path; do
         [ -n "$mount_path" ] || continue
-        relative_path="${mount_path#"$oldroot"/}"
-        case "$relative_path" in
-            dev|dev/*|proc|proc/*|run|run/*|sys|sys/*|x|x/*|oldroot|oldroot/*)
+        case "$mount_path" in
+            /|/dev|/dev/*|/proc|/proc/*|/run|/run/*|/sys|/sys/*|/x|/x/*|/oldroot|/oldroot/*)
                 continue
                 ;;
         esac
         printf '%s\n' "$mount_path"
-    done < <(awk -v prefix="$oldroot/" 'index($5, prefix) == 1 { print $5 }' /proc/self/mountinfo | sort -r)
+    done < <(awk '$5 ~ /^\// { print $5 }' /proc/self/mountinfo | sort -r)
 }
 
-detach_oldroot_mounts() {
-    oldroot="$1"
-    mount --make-rslave "$oldroot" 2>/dev/null || true
+detach_root_data_mounts() {
+    mount --make-rslave / 2>/dev/null || true
 
     while IFS= read -r mount_path; do
         [ -n "$mount_path" ] || continue
         umount -R "$mount_path" 2>/dev/null || umount -l "$mount_path" 2>/dev/null || true
-    done < <(list_oldroot_data_mounts "$oldroot")
+    done < <(list_root_data_mounts)
 
-    remaining_mounts="$(list_oldroot_data_mounts "$oldroot")"
+    remaining_mounts="$(list_root_data_mounts)"
     if [ -n "$remaining_mounts" ]; then
-        echo "Unable to detach old-root mounts:" >&2
+        echo "Unable to detach root data mounts:" >&2
         printf '%s\n' "$remaining_mounts" >&2
         return 1
     fi
@@ -165,9 +173,9 @@ detach_oldroot_mounts() {
 
 mount_transit() {
     mkdir -p "$TRANSIT_ROOT/oldroot" "$TRANSIT_ROOT/dev" "$TRANSIT_ROOT/proc" "$TRANSIT_ROOT/sys" "$TRANSIT_ROOT/run"
+    detach_root_data_mounts || die "root data mounts are still busy; no old system files were removed"
     mount --bind / "$TRANSIT_ROOT/oldroot"
     transit_mounted="yes"
-    detach_oldroot_mounts "$TRANSIT_ROOT/oldroot" || die "old-root submounts are still busy; no old system files were removed"
     mount --rbind /dev "$TRANSIT_ROOT/dev"
     mount --make-rslave "$TRANSIT_ROOT/dev"
     mount -t proc proc "$TRANSIT_ROOT/proc"

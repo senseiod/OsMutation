@@ -15,6 +15,17 @@ die() {
     exit 1
 }
 
+retry_command() {
+    local attempt=1
+    local max_attempts=3
+    until "$@"; do
+        [ "$attempt" -lt "$max_attempts" ] || return 1
+        attempt=$((attempt + 1))
+        echo "Command failed; retrying ($attempt/$max_attempts)..." >&2
+        sleep 2
+    done
+}
+
 print_help() {
     echo -ne "\e[1;32m"
     cat <<-'EOF'
@@ -74,8 +85,8 @@ install() {
             apk add --no-cache "$@"
             ;;
         pacman)
-            pacman -Sy --noconfirm
-            pacman -S --noconfirm --needed "$@"
+            retry_command pacman -Sy --noconfirm --disable-download-timeout
+            retry_command pacman -S --noconfirm --needed --disable-download-timeout "$@"
             ;;
     esac
 }
@@ -199,13 +210,14 @@ detect_os_family() {
     }' "$release_file")"
 
     case "$os_id" in
-        arch|archlinux) printf '%s\n' "arch" ;;
+        arch|archlinux|archarm) printf '%s\n' "arch" ;;
         ubuntu) printf '%s\n' "ubuntu" ;;
         debian) printf '%s\n' "debian" ;;
         centos) printf '%s\n' "centos" ;;
         alpine) printf '%s\n' "alpine" ;;
         *)
             case " $os_id_like " in
+                *" arch "*) printf '%s\n' "arch" ;;
                 *" debian "*) printf '%s\n' "ubuntu" ;;
                 *" rhel "*|*" fedora "*) printf '%s\n' "centos" ;;
                 *) return 1 ;;
@@ -431,32 +443,29 @@ current_script_path() {
     printf '%s/%s\n' "$script_dir" "$(basename -- "${BASH_SOURCE[0]}")"
 }
 
-list_oldroot_data_mounts() {
-    oldroot="$1"
+list_root_data_mounts() {
     while IFS= read -r mount_path; do
         [ -n "$mount_path" ] || continue
-        relative_path="${mount_path#"$oldroot"/}"
-        case "$relative_path" in
-            dev|dev/*|proc|proc/*|run|run/*|sys|sys/*|x|x/*|oldroot|oldroot/*)
+        case "$mount_path" in
+            /|/dev|/dev/*|/proc|/proc/*|/run|/run/*|/sys|/sys/*|/x|/x/*|/oldroot|/oldroot/*)
                 continue
                 ;;
         esac
         printf '%s\n' "$mount_path"
-    done < <(awk -v prefix="$oldroot/" 'index($5, prefix) == 1 { print $5 }' /proc/self/mountinfo | sort -r)
+    done < <(awk '$5 ~ /^\// { print $5 }' /proc/self/mountinfo | sort -r)
 }
 
-detach_oldroot_mounts() {
-    oldroot="$1"
-    mount --make-rslave "$oldroot" 2>/dev/null || true
+detach_root_data_mounts() {
+    mount --make-rslave / 2>/dev/null || true
 
     while IFS= read -r mount_path; do
         [ -n "$mount_path" ] || continue
         umount -R "$mount_path" 2>/dev/null || umount -l "$mount_path" 2>/dev/null || true
-    done < <(list_oldroot_data_mounts "$oldroot")
+    done < <(list_root_data_mounts)
 
-    remaining_mounts="$(list_oldroot_data_mounts "$oldroot")"
+    remaining_mounts="$(list_root_data_mounts)"
     if [ -n "$remaining_mounts" ]; then
-        echo "Unable to detach old-root mounts:" >&2
+        echo "Unable to detach root data mounts:" >&2
         printf '%s\n' "$remaining_mounts" >&2
         return 1
     fi
@@ -464,13 +473,13 @@ detach_oldroot_mounts() {
 
 replace_os() {
     new_root="$1"
+    cd /
     cp "$(current_script_path)" "$new_root/OsMutation.sh"
+    if ! detach_root_data_mounts; then
+        die "root data mounts are still busy; no old system files were removed"
+    fi
     mkdir -p "$new_root/oldroot"
     mount --bind / "$new_root/oldroot"
-    if ! detach_oldroot_mounts "$new_root/oldroot"; then
-        umount -R "$new_root/oldroot" 2>/dev/null || umount -l "$new_root/oldroot" 2>/dev/null || true
-        die "old-root submounts are still busy; no old system files were removed"
-    fi
 
     chroot "$new_root" /bin/bash -c '
         set -o errexit
@@ -519,6 +528,28 @@ configure_root_ssh() {
         sed -i -E 's/^[#[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin yes/' "$sshd_config"
     else
         printf '\nPermitRootLogin yes\n' >>"$sshd_config"
+    fi
+}
+
+initialize_arch_keyring() {
+    local keyring
+    local keyrings=()
+
+    pacman-key --init
+    for keyring in archlinux archlinuxarm; do
+        if [ -f "/usr/share/pacman/keyrings/$keyring.gpg" ]; then
+            keyrings+=("$keyring")
+        fi
+    done
+    [ "${#keyrings[@]}" -gt 0 ] || die "no Arch Linux pacman keyring is available"
+    pacman-key --populate "${keyrings[@]}"
+}
+
+initialize_systemd_identity() {
+    if [ ! -s /etc/machine-id ]; then
+        command -v systemd-machine-id-setup >/dev/null 2>&1 ||
+            die "systemd-machine-id-setup is not available in the target system"
+        systemd-machine-id-setup
     fi
 }
 
@@ -579,6 +610,9 @@ post_install() {
     esac
 
     target_family="$(detect_os_family /)" || die "unsupported installed operating system"
+    if [ "$target_family" != "alpine" ]; then
+        initialize_systemd_identity
+    fi
     case "$target_family" in
         alpine)
             install openssh bash ifupdown-ng
@@ -591,6 +625,7 @@ post_install() {
             fi
             ;;
         arch)
+            initialize_arch_keyring
             install openssh
             offline_systemctl enable sshd.service
             configure_systemd_network "$target_family"
