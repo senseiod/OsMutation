@@ -217,7 +217,7 @@ prepare_transit_root() {
 
     mount_transit
     chroot "$TRANSIT_ROOT" /bin/sh -c \
-        'apk update && apk add --no-cache bash coreutils curl gawk sed tar xz iproute2'
+        '/sbin/apk update && /sbin/apk add --no-cache bash coreutils curl gawk sed tar xz iproute2'
 }
 
 main() {

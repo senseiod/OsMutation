@@ -12,6 +12,9 @@ Reinstall an OpenVZ 7+ or LXC container to Debian, Ubuntu, CentOS, Alpine Linux,
 - Preserves the root password, root SSH keys, hostname, and the primary static IPv4 configuration.
 - Includes a Tight mode for containers with very little free disk space.
 
+
+Archlinux reinstall [ ok ]
+
 ## Usage
 
 Standard mode:

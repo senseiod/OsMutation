@@ -433,7 +433,7 @@ ensure_target_bash() {
     target_root="$1"
     target_family="$(detect_os_family "$target_root")" || die "unsupported target operating system"
     if [ "$target_family" = "alpine" ]; then
-        chroot "$target_root" /bin/sh -c 'apk update && apk add --no-cache bash'
+        chroot "$target_root" /bin/sh -c '/sbin/apk update && /sbin/apk add --no-cache bash'
     fi
     [ -x "$target_root/bin/bash" ] || die "the target template does not provide bash"
 }
