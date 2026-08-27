@@ -510,7 +510,13 @@ replace_os() {
             move_paths+=("$path")
         done
         if [ ${#move_paths[@]} -gt 0 ]; then
-            mv -f -- "${move_paths[@]}" /oldroot/
+            # The old init system can recreate paths such as /var/log while
+            # the root is being replaced.  A cross-mount mv then refuses to
+            # replace the newly non-empty directory.  Copying merges the new
+            # root into those paths, after which one rm process can remove the
+            # staging copy even when /usr (and rm itself) is among the inputs.
+            cp -a -- "${move_paths[@]}" /oldroot/
+            rm -rf -- "${move_paths[@]}"
         fi
     '
 

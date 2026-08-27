@@ -15,6 +15,7 @@ Reinstall an OpenVZ 7+ or LXC container to Debian, Ubuntu, CentOS, Alpine Linux,
 
 ArchLinux reinstall [ ok ]
 AlpineLinux reinstall [ ok ]
+CentOSLinux reinstall [ ok ]
 
 ## Usage
 
