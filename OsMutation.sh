@@ -473,6 +473,7 @@ detach_root_data_mounts() {
 
 replace_os() {
     new_root="$1"
+    export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
     source_script="$(current_script_path)"
     cd /
     cp "$source_script" "$new_root/OsMutation.sh"
@@ -484,6 +485,7 @@ replace_os() {
 
     chroot "$new_root" /bin/bash -c '
         set -o errexit
+        export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 
         remove_paths=()
         for path in /oldroot/* /oldroot/.[!.]* /oldroot/..?*; do
@@ -512,6 +514,10 @@ replace_os() {
         fi
     '
 
+    # Commands used before the root switch may be cached with paths from the
+    # old system (for example /usr/bin/umount).  Refresh Bash's command hash
+    # table after the new root has replaced those paths.
+    hash -r
     umount "$new_root/oldroot"
     exec env OSM_POSTINSTALL=1 OSM_CTTYPE="$cttype" OSM_CLEANUP_SCRIPT=/OsMutation.sh \
         /bin/bash /OsMutation.sh
@@ -617,6 +623,7 @@ post_install() {
     case "$target_family" in
         alpine)
             install openssh bash ifupdown-ng
+            ssh-keygen -A
             rc-update add sshd default
             rc-update add mdev sysinit
             rc-update add devfs sysinit
