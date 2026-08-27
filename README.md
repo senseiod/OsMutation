@@ -13,7 +13,8 @@ Reinstall an OpenVZ 7+ or LXC container to Debian, Ubuntu, CentOS, Alpine Linux,
 - Includes a Tight mode for containers with very little free disk space.
 
 
-Archlinux reinstall [ ok ]
+ArchLinux reinstall [ ok ]
+AlpineLinux reinstall [ ok ]
 
 ## Usage
 
