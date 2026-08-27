@@ -511,11 +511,24 @@ replace_os() {
         done
         if [ ${#move_paths[@]} -gt 0 ]; then
             # The old init system can recreate paths such as /var/log while
-            # the root is being replaced.  A cross-mount mv then refuses to
-            # replace the newly non-empty directory.  Copying merges the new
-            # root into those paths, after which one rm process can remove the
-            # staging copy even when /usr (and rm itself) is among the inputs.
-            cp -a -- "${move_paths[@]}" /oldroot/
+            # the root is being replaced.  Copying merges the new root into
+            # those paths, but cp can still lose a check-then-create race and
+            # report EEXIST.  A retry is safe because cp -a is idempotent here
+            # and the preceding attempt leaves the already copied files in
+            # place.
+            copy_attempt=1
+            while ! cp -a -- "${move_paths[@]}" /oldroot/; do
+                if [ "$copy_attempt" -ge 5 ]; then
+                    echo "Unable to copy the new root after $copy_attempt attempts." >&2
+                    exit 1
+                fi
+                copy_attempt=$((copy_attempt + 1))
+                echo "The old system recreated a path; retrying root copy ($copy_attempt/5)..." >&2
+                sleep 1
+            done
+
+            # One rm process can remove the staging copy even when /usr (and
+            # rm itself) is among the inputs.
             rm -rf -- "${move_paths[@]}"
         fi
     '
